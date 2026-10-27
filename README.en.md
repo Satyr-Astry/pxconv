@@ -7,47 +7,61 @@
 
 English ｜ **中文** → [README.md](README.md)
 
-![Algorithm comparison](assets/algorithm_compare.png)
+![Test corpus](assets/testset_montage.png)
 
-*Five configurations side by side (left→right: v2 area mean / v2 majority / **v3 core, the default** / v3 core + edge colour stretch / v3 with rescue off). Checkerboard = transparency.*
+*The repo ships 5 real test images (`assets/testset/`: cut-out AI character renders, mixed 896×1152 and 768×1344, all with an `alpha = 1/255` "fake transparency" background). Every number below comes from these 5 files.*
 
 ---
 
-## 1. Results (measured on one machine, all reproducible)
+## 1. Results (5 real images, reproducible)
 
-Input: an **896×1152 RGBA cut-out** with **456,376 semi-transparent pixels**, a background at `alpha = 1/255`
-("fake transparency" typical of rembg / magic-wand output) and non-zero RGB hidden in the transparent area.
-Target: **output width 128 px, 24-colour palette**.
+Fixed setting: **output width 128 px / 24 colours**, CPU only.
 
-| Metric | Naive resize | **pxconv v3** | Note |
+| Metric | Plain NEAREST / LANCZOS resize | **pxconv v3** | Verdict |
 |---|---|---|---|
-| Semi-transparent pixels (dirty fringe) | 9,391 (NEAREST)<br>11,400 (LANCZOS) | **0** | alpha is only ever 0 / 255 |
-| Distinct alpha levels | 126 / 234 | **2** | per-pixel editable, palette-swappable |
-| Visible colours | 3,008 / 3,914 | **24** | `--colors 24` is a hard cap |
-| Thin-structure recall (fingers, hair, tail tips) | 28.6% | **77.5%** | 18.2% with rescue off → ≈4.3× |
-| Fragmentation (4-connected components) | 4 | **1** | 7 → 1 with rescue |
-| Time to change parameters (preprocessed cache hot) | 607 ms | **18 ms** | ≈**34×** — the only way a live slider feels instant |
-| Bottom-of-image content | **lost entirely** (0 cells) | **768 cells** | integer blocking covers only 990/1152 rows |
-| Edge colour delta (edge vs interior, 0–441) | 2.2 | **1.5** | lower is better; unreliable on line-art, see limits |
+| Semi-transparent pixels (dirty fringe) | **55,697 / 66,324** (sum over 5 images) | **0** | wiped out in 5/5 images |
+| Distinct alpha levels (mean) | 181 / 247 | **2** (only 0 and 255) | per-pixel editable, palette-swappable |
+| Visible colours (mean) | 5,559 / 6,055 | **24.0** | `--colors 24` is a hard cap; exactly 24 on all 5 |
+| Thin-structure recall (fingers, strands, thin belt details) | v2 family **12.2%** | **43.7%** | **3.6×** (12.9% with rescue off) |
+| Fragmentation (4-connected components, mean) | 7.2 | **2.6** | broken limbs merge back from ~7 pieces to ≤3 |
+| Param-change time (preprocessed cache hot, mean) | v2 majority **622 ms**<br>v2 area-mean 49.5 ms | **22.0 ms** | **28×** vs majority (23.9–34.9× per image) |
+| Content near the bottom of the image | 896×1152→128 px **drops 162 rows (14.06%)** | full coverage, 0 rows lost | see "Measurement caliber" and algorithm #1 |
 
-Same code on the bundled 256×320 synthetic sample (`assets/sample_raw.png`, 3,547 semi-transparent pixels):
+**Per-image detail** (the recall column is normalised over the region *each algorithm actually renders* — see "caliber"):
 
-| Output | Semi-transparent px | Alpha levels | Colours | Thin-structure recall |
-|---|---|---|---|---|
-| Plain NEAREST → 64 px | 262 | 59 | 206 | — |
-| Plain LANCZOS → 64 px | 762 | 170 | 548 | — |
-| **pxconv → 64 px / 16 colours** | **0** | **2** | **15** | **94.7%** (67.1% rescue off) |
+| Test image | Source | Semi-transparent px in source | NEAREST semi px / colours | **pxconv semi px / colours** | Recall v2 → v3 | Cached time v2 majority → v3 |
+|---|---|---|---|---|---|---|
+| cutout_00002 | 896×1152 | 376,295 (36.5%) | 7,713 / 10,538 | **0 / 24** | 11.2% → **53.9%** | 626 → **21 ms** |
+| cutout_00003 | 896×1152 | 475,269 (46.0%) | 9,840 / 2,541 | **0 / 24** | 17.0% → **22.3%** | 610 → **20 ms** |
+| cutout_00005 | 896×1152 | 456,376 (44.2%) | 9,391 / 3,008 | **0 / 24** | 15.1% → **77.5%** | 600 → **17 ms** |
+| cutout_00006 | 768×1344 | 496,509 (48.1%) | 13,947 / 7,301 | **0 / 24** | 8.2% → **31.3%** | 639 → **27 ms** |
+| cutout_00008 | 768×1344 | 530,984 (51.4%) | 14,806 / 4,407 | **0 / 24** | 9.4% → **33.7%** | 636 → **25 ms** |
 
-Reproduce from a fresh clone — none of my private assets are needed:
+![Real comparison](assets/algorithm_compare_real.png)
+
+*cutout_00005 (the image with the largest v3 gain), five panels: v2 area mean | v2 majority | **v3 core, the default** | v3 core + edge-colour stretch | v3 with rescue off. Checkerboard = transparency.*
+
+![Thin-structure rescue, zoomed](assets/detail_zoom.png)
+
+*The densest difference region at 10× (NEAREST): rescue on (left) vs off (right). Look at where the thin diagonal strand meets the body and at the thin strip hanging from the top — the right side breaks, the left side stays connected.*
+
+**Reproduce it** (works from a fresh clone, no private assets needed):
 
 ```bash
-python tools/benchmark.py --size 64 --colors 16 --crop-control    # speed / thin recall / bottom-crop control
-python tools/edge_bench.py --sizes 64,128 --colors 16             # edge parameter matrix
-pytest -q tests/                                                  # 11 invariant tests
+python tools/benchmark.py assets/testset/cutout_00005.png --size 128 --colors 24 --crop-control
+python tools/edge_bench.py assets/testset/cutout_00005.png --sizes 64,128 --colors 16
+pytest -q tests/                                     # 11 invariant tests
 ```
 
-**Environment**: Windows 10 · Python 3.14.7 (code targets ≥3.10) · numpy 2.5.3 · Pillow 12.3.0 · Ryzen 5700X3D / 16 GB.
-Pure CPU — no GPU, no torch.
+**Environment**: Windows 10 · Python 3.14.7 (code targets ≥3.10) · numpy 2.5.3 · Pillow 12.3.0 · Ryzen 5700X3D / 16 GB,
+**pure CPU** (no GPU, no torch). CI on Linux (GitHub Actions, Python 3.10 / 3.12 / 3.13) is green as well.
+
+### Measurement caliber: why v2's recall is normalised over *its own* region
+
+v2's integer blocking crops the bottom of the image (see algorithm #1), so the region it actually renders is smaller
+than v3's. Measuring v2 against the v3 grid misaligns the content and **inflates** the score: on this corpus v2 gets
+**21.3%** under the v3 grid, but only **12.2%** over the region it really renders. The table above uses the latter
+(fair caliber: of the part that was rendered, how much thin structure survived); the dropped rows are reported separately.
 
 ---
 
@@ -55,60 +69,59 @@ Pure CPU — no GPU, no torch.
 
 ### 1. Exact area coverage on a fractional grid (integral image), not integer blocking
 
-The usual shortcut is `arr[:bh*rows].reshape(rows, bh, ...)` — and **`bh = h // rows` silently truncates the
-bottom of the image**. For 896×1152 → 128 px width, `rows = 165, bh = 6`, i.e. only **990 of 1152 rows**
-are covered: **14% of the height is discarded** and anything living near the bottom simply vanishes.
+The usual shortcut is `arr[:bh*rows].reshape(rows, bh, ...)` — and **`bh = h // rows` silently truncates the bottom
+of the image**. For 896×1152 → 128 px width: `rows = 165, bh = 6`, covering only **990 rows = 14.06% of the height
+discarded**; anything hugging the bottom vanishes. Yet 768×1344 → 128 px gives `1344/224 = 6` exactly, so **not a
+single row is lost** — that is what makes this bug so nasty: **it only fires at certain aspect ratios, while the output
+size looks perfectly normal.**
 
-pxconv treats every output cell as a rectangle with **float boundaries** and sums it from a 5-channel
-**summed-area table** (alpha sum, core-pixel count, core RGB sum) with **bilinear boundary sampling**.
-Cost is O(1) per cell and the cells always tile the whole image —
-`tests/test_pxconv.py::test_fractional_grid_covers_whole_image` asserts the reconstructed alpha mass matches the
-source within 0.1%.
-
-> Bottom-content control (896×1152 synthetic, subject only in the bottom 5%, 128 px output):
-> v2 area-mean / majority → **0 bottom pixels**; v3 → **768 cells**.
-
-So arbitrary (non-integer) scale factors are exact, and the "half the image is missing and nobody noticed"
-class of bug cannot happen.
+pxconv treats every output cell as a rectangle with float boundaries and sums a 5-channel **summed-area table**
+(alpha sum, core-pixel count, core RGB sum) with **bilinear boundary sampling**: O(1) per cell, and the cells always
+tile the whole image. `tests/test_pxconv.py::test_fractional_grid_covers_whole_image` asserts the reconstructed alpha
+mass matches the source within 0.1%; `::test_v3_keeps_bottom_content_that_v2_crops` is the negative control for the bug
+(v2 keeps 0 cells, v3 keeps ≥20).
 
 ### 2. Sample colours only from *opaque core* pixels — no darkened fringe
 
-Alpha-weighted averaging folds semi-transparent edge pixels into the colour — and after background removal those
-pixels carry the **hidden RGB of the background** (usually black). The average therefore comes out dark.
-pxconv only counts pixels with `alpha >= --core-thr` (default 0.7) for colour, and fits the palette on those same
-core pixels, so fringe colours can never pollute it. Semi-transparent and transparent pixels contribute **nothing**.
+Alpha-weighted averaging folds semi-transparent edge pixels into the colour, and after background removal those pixels
+carry the **hidden RGB of the background** (usually black), so the average comes out dark. pxconv only counts pixels
+with `alpha >= --core-thr` (default 0.7) for colour, and fits the palette on those same core pixels, so fringe colours
+can never pollute it.
 
-Result: you don't need a de-fringe pass, because the source of the pollution was never averaged in.
-`--edge-color stretch` (replace the 1-px ring with interior colour) is the optional extra.
+These 5 sources each carry **376,295–530,984 semi-transparent pixels (36%–51% of the canvas)**; averaging them in would
+be a disaster. `--alpha-thr 0.5` declares them "not present" and colour comes only from core pixels.
 
-### 3. Thin-structure rescue (hysteresis) — 1-px fingers, strands and tail tips survive
+### 3. Thin-structure rescue (hysteresis) — 1-px fingers, strands and belt details survive
 
-A pure threshold ("cell exists iff coverage ≥ 0.5") is guaranteed to cut thin lines at small output sizes,
-because a 1-px line can never cover half a big cell. pxconv keeps a *weak* cell when
-**coverage ≥ 0.4 × threshold AND at least 2 of its 8 neighbours are solid** — thin lines connected to the body
-survive, isolated noise does not. Cells with no core pixel at all are filled with the **nearest core colour**
-(iterative diffusion) instead of turning into holes.
+A pure threshold ("cell exists iff coverage ≥ 0.5") is guaranteed to cut thin lines at small output sizes. pxconv keeps
+a *weak* cell when **coverage ≥ 0.4 × threshold AND at least 2 of its 8 neighbours are solid** — thin lines attached to
+the body survive, isolated noise does not. Cells without any core pixel are filled with the **nearest core colour**
+(iterative diffusion) so thin lines don't become black holes.
 
-Measured on the real cut-out at 128 px: recall 18.2% → **77.5%**, connected components 7 → **1**.
+Measured (mean over 5 images): **12.2% → 43.7% (3.6×)**, with cutout_00005 going 15.1% → **77.5%**; connected
+components 7.2 → 2.6. Turning rescue off immediately falls back to 12.9% — **the gain really comes from this step,
+not from some lucky re-tuning elsewhere.**
 
 ### 4. Palette "closure" — `--colors` is a hard ceiling
 
-Naive edge re-colouring writes a *mean of neighbours* into edge pixels; that mean is not in the palette, so a
-24-colour request quietly becomes 197 colours. pxconv performs edge re-colouring as **palette-index operations**
-(interior mode / interior original colour pushed outward) and finishes with `snap_to_palette()`, so the visible
-colour count can never exceed `--colors` (`test_palette_cap_is_enforced` checks 8/16/24).
+Naive edge re-colouring writes a *mean of neighbours*, which is not in the palette, so a 24-colour request quietly
+becomes hundreds (the naive baselines land at 2,541–10,538 colours on this corpus). pxconv performs edge re-colouring
+as **palette-index operations** (interior mode / interior original colour pushed outward) and finishes with
+`snap_to_palette()`, so the visible colour count can never exceed `--colors`: **exactly 24 on all 5 images**, and
+`test_palette_cap_is_enforced` checks 8/16/24.
 
 ### 5. Binarised alpha + hard silhouette = an actual pixel-art asset
 
-Output alpha is 0/255 only. Optional morphology (`shrink` / `grow`) removes a 1-px halo. If you *want* soft edges
-(glowing character art, UI) use `--alpha-mode keep`, which keeps the coverage gradient — at that point it is no
-longer pixel art, and that trade-off is explicit rather than accidental.
+Output alpha is 0/255 only (**alpha levels = 2, semi-transparent pixels = 0** on all 5). If you want soft edges
+(glowing art, UI) use `--alpha-mode keep`, which keeps the coverage gradient — at that point it is no longer pixel art,
+and that trade-off is explicit rather than accidental.
 
 ### 6. Preprocess once, cache per image → parameters are interactive
 
-`prepare()` builds the integral image once per image (~108 ms for 896×1152); palettes are cached by
-`(colors, core_thr, method)`; per-cell queries are O(1). Tweaking parameters drops from 607 ms to **18 ms**.
-The palette uses PIL's median cut (C implementation) instead of a hand-written k-means (1.5 s → 20 ms).
+`prepare()` builds the integral image once per image (~100 ms including decode for 896×1152); palettes are cached by
+`(colors, core_thr, method)`; per-cell queries are O(1). Parameter tweaks drop from **622 ms** (v2 majority) to
+**22 ms** — 28× (23.9–34.9× per image), and 2.3× faster than v2 area-mean too. The palette uses PIL's median cut
+(C implementation) instead of a hand-written k-means (1.5 s → 20 ms).
 
 ---
 
@@ -124,26 +137,25 @@ pip install -r requirements.txt                  # numpy + pillow, that's all
 **One image (recommended defaults)**
 
 ```bash
-python pxconv.py character.png -o out.png --size 128 --colors 24
+python pxconv.py assets/testset/cutout_00005.png -o out.png --size 128 --colors 24
 ```
 
 **Batch a folder**
 
 ```bash
-python pxconv.py input_dir/ -o output_dir/ --size 96 --colors 16
+python pxconv.py assets/testset/ -o out/ --size 96 --colors 16
 ```
 
-Two files are produced: `out.png` (native-size, true pixel sprite) and `out_preview.png`
-(NEAREST upscale on a checkerboard, grid lines only at ≥8×).
-`--size` is the target width **before** transparent-border trimming, so the final size is smaller
-(e.g. 128 → 68×143). That is expected, not a bug.
+Two files are produced: `out.png` (native-size, true pixel sprite) and `out_preview.png` (NEAREST upscale on a
+checkerboard, grid lines only at ≥8×). `--size` is the target width **before** transparent-border trimming, so the
+final size is smaller (e.g. 128 → 64×160). That is expected, not a bug.
 
 **As a library**
 
 ```python
 import argparse, pxconv as P
 
-src = P.load_rgba("character.png")             # HxWx4 float32 in 0..1
+src = P.load_rgba("assets/testset/cutout_00005.png")   # HxWx4 float32 in 0..1
 cols, rows = P.target_grid(src.shape[0], src.shape[1], 128, None)
 o = argparse.Namespace(size=128, pixel_size=None, colors=24, alpha_thr=0.5,
                        cov_thr=0.5, core_thr=0.7, rescue="on", palette_method="median",
@@ -178,9 +190,9 @@ P.save_rgba(sprite, "sprite.png")
 | `--no-trim` / `--pad N` | flag / int | trim on / `0` | keep transparent border / pad N px after trimming |
 | `--preview-scale` / `--no-preview` | int / flag | `6` / off | preview zoom / skip preview |
 
-**Size guidance** for 896×1152 character or photo-like art: **start at 128 px (balanced), 160 px for detail**;
-below 96 px you clearly lose hands and feet. Flat anime shading is fine at 16–24 colours; realistic art looks
-muddy below ~48 colours.
+**Size guidance (from this 896×1152 / 768×1344 corpus)**: **start at 128 px (balanced), 160 px for detail**; below
+96 px you clearly lose hands and feet. Flat anime shading is fine at 16–24 colours; photo-like art looks muddy at 24,
+use 48+.
 
 ---
 
@@ -192,12 +204,12 @@ python ui/server.py 8765        # then open http://127.0.0.1:8765
 
 On Windows just double-click `scripts/start-ui.bat`. Stdlib only (`http.server`) — **no Flask, no extra deps**.
 Three columns: original (checkerboard) | result + 8 live metrics | parameters + batch panel.
-Ships with 7 presets, 220 ms debounced recompute, zoom preview, `Download PNG` / `Save to path`,
-and folder batch mode that also zips the results.
+Ships with 7 presets, debounced auto-recompute, zoom preview, `Download PNG` / `Save to path`, and folder batch mode
+that also zips the results.
 
 ![Local web UI](assets/ui_screenshot.png)
 
-*Any parameter change re-runs the whole image: the 34×72 sprite above took 11.8 ms, repeatedly, on the same input.*
+*Any parameter change re-runs the whole image: the 34×72 sprite above takes ~12 ms, repeatedly, on the same input.*
 
 HTTP API: `POST /api/convert`, `POST /api/save`, `POST /api/batch`, `GET /api/presets`.
 
@@ -215,8 +227,9 @@ tools/contact_sheet.py multi-size contact sheet (pick 48/64/96/128/160)
 tools/compare_sheet.py side-by-side algorithm comparison image
 tools/make_sample.py   generate the synthetic soft-alpha test image
 tests/test_pxconv.py   11 invariant tests (pytest, or plain `python`)
-assets/                sample image and comparison sheet (everything is generated)
-docs/ALGORITHM.md      algorithm derivation, pipeline order, metric definitions (Chinese)
+assets/testset/        5 real test images (cut-out AI character renders, RGBA)
+assets/                comparison sheets, zoom detail, UI screenshot, synthetic sample
+docs/ALGORITHM.md      algorithm derivation, pipeline order, metrics, parameter sensitivity (Chinese)
 scripts/start-ui.bat   one-click UI launcher on Windows (CRLF, ASCII-only)
 ```
 
@@ -224,26 +237,22 @@ scripts/start-ui.bat   one-click UI launcher on Windows (CRLF, ASCII-only)
 
 ## 7. Limits and negative results (honest list)
 
-- **"Edge colour delta" is a false signal on line-art.** It treats the character's own black linework as an
-  unclean edge, so an algorithm that *smears the linework away* scores better. Use **thin-structure recall +
-  component count + your eyes** instead. The metric was removed from the UI and only survives in
-  `tools/edge_bench.py` for reference.
-- **Don't use `--edge shrink` at very small output sizes** — it severs 1-px structures, and the edge-delta number
-  jumps to 50+ (not bleed; it's the reference measurement breaking once the thin structure is gone).
-- **`--alpha-mode keep` does not produce pixel art** — it keeps hundreds of alpha levels (1,359 semi-transparent
-  pixels at 64 px on the sample). It is for soft-edged art only.
+- **The gain depends on thin structures actually being there**: on this corpus cutout_00003 only moves 17.0% → **22.3%** (chunky subject, few thin lines) while cutout_00005 reaches **77.5%**. Rescue is not a magic filter.
+- **v3 with rescue off ≈ v2 in quality** (12.9% vs 12.2%): v3's silhouette advantage comes from the rescue mechanism itself, not from some other threshold magic. This has to be said out loud.
+- **"Edge colour delta" is a false signal on line-art.** It treats the character's own black linework as an unclean edge, so an algorithm that smears the linework away scores better. Use **thin-structure recall + component count + your eyes**. The metric was removed from the UI and only survives in `tools/edge_bench.py`.
+- **Don't use `--edge shrink` at very small output sizes** — it severs 1-px structures and the edge-delta number jumps to 50+ (not bleed; the reference measurement breaks once the thin structure is gone).
+- **`--alpha-mode keep` does not produce pixel art** — it keeps hundreds of alpha levels (1,359 semi-transparent pixels at 64 px on the synthetic sample). Soft-edged art only.
 - **No upscaling.** This is a downscaler; the preview upscale is NEAREST and invents nothing.
-- **No light-outline enhancement** (the PixelOE-style look). An outline pass was implemented and intentionally
-  disabled — the code stays in the "archive" block at the bottom of `pxconv.py`.
+- **No light-outline enhancement** (the PixelOE-style look). An outline pass was implemented and intentionally disabled — the code stays in the "archive" block at the bottom of `pxconv.py`.
 - **No shared palette across animation frames** — pin the palette yourself or colours will flicker during playback.
 - **Integral-image memory is O(5·W·H·4B)**: ~21 MB for 896×1152, hundreds of MB at 4K. Tile very large inputs.
 - **`--palette-method kmeans` is slow** at megapixel scale; `median` (PIL median cut) is the real-time path.
-- **Genuinely soft content** (translucent shadows, smoke, glows) always loses detail under hard alpha — that's the
-  method being the wrong tool, not a bug.
+- **Genuinely soft content** (translucent shadows, smoke, glows) always loses detail under hard alpha — the method being the wrong tool, not a bug.
 
 ---
 
 ## 8. License
 
-MIT — see [LICENSE](LICENSE). Third-party reference notes live in [NOTICE.md](NOTICE.md);
-no third-party code is included in this repository.
+MIT — see [LICENSE](LICENSE). Third-party reference notes live in [NOTICE.md](NOTICE.md); no third-party code is
+included in this repository. The 5 character renders in `assets/testset/` are the author's own AI-generated images
+(background removed) and are shipped purely as test fixtures.
