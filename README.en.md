@@ -13,6 +13,15 @@ English ｜ **中文** → [README.md](README.md)
 
 ---
 
+## ▶ Promo video (63 s)
+
+<video src="assets/promo.mp4" poster="assets/promo_poster.png" controls muted playsinline width="100%"></video>
+
+[Play / download the mp4](assets/promo.mp4) · 8 scenes: **the problem** (semi-transparent fringe · colour explosion) → **four mechanisms** → **source vs sprite** → **thin-structure rescue at 10×** → **28× faster** → **one command**.
+Chinese voice-over; every number on screen is a measured value from the 5 test images below.
+
+---
+
 ## 1. Results (5 real images, reproducible)
 
 Fixed setting: **output width 128 px / 24 colours**, CPU only.

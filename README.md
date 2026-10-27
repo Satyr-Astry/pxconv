@@ -12,6 +12,15 @@
 
 ---
 
+## ▶ 宣传片（63 秒）
+
+<video src="assets/promo.mp4" poster="assets/promo_poster.png" controls muted playsinline width="100%"></video>
+
+[直接播放 / 下载 mp4](assets/promo.mp4) · 8 幕：**问题**（半透明毛边 · 色数爆炸）→ **四步方法** → **成品对比** → **细结构救援 10× 放大** → **速度 28×** → **一条命令**。
+中文旁白，画面里每个数字都来自下面这 5 张测试图的实测值。
+
+---
+
 ## 一、主要成果（5 张真图实测，可复现）
 
 统一设置：**输出宽度 128px / 24 色**，纯 CPU。
