@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>pxconv · 透明图 → 像素素材</title>
+<style>
+  :root{
+    --bg:#15161a; --card:#1d1f25; --card2:#23262e; --line:#33363f;
+    --fg:#e8e9ee; --dim:#9aa0ae; --acc:#7aa2ff; --acc2:#63d2a0; --warn:#ffb26b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.5 "Microsoft YaHei UI","Segoe UI",system-ui,sans-serif}
+  header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;
+         align-items:center;gap:14px;flex-wrap:wrap;background:var(--card)}
+  h1{font-size:16px;margin:0;font-weight:600}
+  h1 span{color:var(--acc)}
+  header .hint{color:var(--dim);font-size:12px}
+  .wrap{display:grid;grid-template-columns:minmax(320px,1fr) minmax(320px,1fr) 330px;
+        gap:14px;padding:14px;align-items:start}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .card h2{font-size:13px;margin:0 0 10px;color:var(--dim);font-weight:600;
+           letter-spacing:.04em;text-transform:uppercase}
+  .checker{border-radius:8px;overflow:hidden;display:flex;align-items:center;
+           justify-content:center;height:min(50vh,420px);
+           background-color:#2b2d34;
+           background-image:linear-gradient(45deg,#3a3d46 25%,transparent 25%),
+                            linear-gradient(-45deg,#3a3d46 25%,transparent 25%),
+                            linear-gradient(45deg,transparent 75%,#3a3d46 75%),
+                            linear-gradient(-45deg,transparent 75%,#3a3d46 75%);
+           background-size:16px 16px;
+           background-position:0 0,0 8px,8px -8px,-8px 0px}
+  .checker img{display:block;image-rendering:pixelated;outline:1px solid #454a55}
+  .row{display:flex;gap:8px;align-items:center;margin-bottom:9px}
+  .row label{flex:0 0 96px;color:var(--dim);font-size:12.5px}
+  .row .val{flex:0 0 46px;text-align:right;color:var(--acc2);font-variant-numeric:tabular-nums}
+  select,input[type=text],input[type=number]{background:var(--card2);color:var(--fg);
+        border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;flex:1;min-width:0}
+  input[type=range]{flex:1;accent-color:var(--acc)}
+  button{background:var(--card2);color:var(--fg);border:1px solid var(--line);
+         border-radius:7px;padding:7px 12px;font:inherit;cursor:pointer}
+  button:hover{border-color:var(--acc)}
+  button.primary{background:var(--acc);border-color:var(--acc);color:#0f1220;font-weight:600}
+  button.ghost{background:transparent}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{font-size:12px;padding:4px 9px;border-radius:20px;background:var(--card2);
+        border:1px solid var(--line);cursor:pointer;color:var(--dim)}
+  .chip:hover{border-color:var(--acc);color:var(--fg)}
+  .metrics{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;margin-top:4px}
+  .metrics div{background:var(--card2);border-radius:7px;padding:6px 9px;font-size:12.5px}
+  .metrics b{display:block;color:var(--acc2);font-size:15px;font-variant-numeric:tabular-nums}
+  .metrics small{color:var(--dim)}
+  .ok{color:var(--acc2)} .err{color:#ff7b7b} .dim{color:var(--dim)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)}
+  #drop{border:1.5px dashed var(--line);border-radius:9px;padding:12px;text-align:center;
+        color:var(--dim);cursor:pointer;margin-bottom:10px}
+  #drop.hot{border-color:var(--acc);color:var(--fg);background:#1a2033}
+  .sep{height:1px;background:var(--line);margin:12px 0}
+  .note{font-size:12px;color:var(--dim);line-height:1.6}
+  .badge{font-size:11px;padding:2px 7px;border-radius:20px;background:#22303f;color:var(--acc2)}
+  #offline{display:none;background:#5a3a1e;color:#ffd9a8;padding:9px 16px;font-size:13px;
+           border-bottom:1px solid #7a5228;cursor:pointer}
+  #offline b{color:#ffc07a}
+  #offline code{background:#3a2712;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div id="offline" onclick="location.reload()">⚠ <b>后端服务未连接</b>（UI 进程可能已退出或正在启动）。
+点了重试 → 刷新本页；若还是这样：重新运行 <code>python ui/server.py 8765</code>（Windows 也可双击 <code>scripts/start-ui.bat</code>）拉起服务。</div>
+<header>
+  <h1>pxconv <span>透明图 → 像素素材</span></h1>
+  <span class="hint">v3：积分图精确覆盖率 + 只算不透明核心像素 · 细结构救援 · 硬边 alpha</span>
+  <span id="status" class="dim">等待输入…</span>
+</header>
+
+<div class="wrap">
+  <!-- 原图 -->
+  <div class="card">
+    <h2>原图（带透明通道）</h2>
+    <div id="drop">把图片拖到这里，或点击选择 / 直接填下面路径
+      <input type="file" id="file" accept="image/*" hidden>
+    </div>
+    <div class="row"><label>输入路径</label>
+      <input type="text" id="inpath" placeholder="D:\art\character.png">
+      <button onclick="loadPath()">载入</button></div>
+    <div class="checker" id="origbox"><img id="orig" alt=""></div>
+  </div>
+
+  <!-- 结果 -->
+  <div class="card">
+    <h2>像素素材结果 <span class="badge" id="srcname"></span></h2>
+    <div class="checker" id="outbox"><img id="out" alt=""></div>
+    <div class="row" style="margin-top:10px"><label>预览放大</label>
+      <input type="range" id="zoom" min="1" max="24" value="6" oninput="zoomChanged()">
+      <span class="val" id="zoomv">6x</span>
+      <button class="ghost" onclick="fitOut(true)">适应</button></div>
+    <div class="btns">
+      <button class="primary" onclick="download()">下载 PNG</button>
+      <button onclick="saveTo()">保存到路径…</button>
+      <button class="ghost" onclick="loadPath()">重新转换</button>
+    </div>
+    <div class="metrics" id="metrics"></div>
+  </div>
+
+  <!-- 参数 -->
+  <div class="card">
+    <h2>参数</h2>
+    <div class="chips" id="presets"></div>
+    <div class="sep"></div>
+
+    <div class="row"><label>输出宽度</label>
+      <input type="range" id="size" min="8" max="256" value="64" oninput="onCtl()">
+      <span class="val" id="sizev">64</span></div>
+    <div class="note" style="margin:-4px 0 8px 96px">裁边前的目标宽度；裁掉透明边后成品会更小</div>
+    <div class="row"><label>或 每N源像素</label>
+      <input type="range" id="pixel_size" min="0" max="16" value="0" oninput="onCtl()">
+      <span class="val" id="psv">关</span></div>
+    <div class="row"><label>色数</label>
+      <input type="range" id="colors" min="0" max="64" value="16" oninput="onCtl()">
+      <span class="val" id="colorsv">16</span></div>
+
+    <div class="sep"></div>
+    <div class="row"><label>取色方式</label>
+      <select id="sample" onchange="onCtl()">
+        <option value="core">core 覆盖率+核心像素(v3推荐)</option>
+        <option value="majority">majority 多数投票(老)</option>
+        <option value="mean">mean 面积平均(老,边缘发暗)</option>
+        <option value="center">center 中心点(老,丢细节)</option>
+      </select></div>
+    <div class="row"><label>核心像素阈值</label>
+      <input type="range" id="core_thr" min="40" max="95" value="70" oninput="onCtl()">
+      <span class="val" id="corev">0.70</span></div>
+    <div class="row"><label>细结构救援</label>
+      <input type="checkbox" id="rescue" checked onchange="onCtl()" style="flex:0 0 auto">
+      <span class="note">保住 1px 细手指/尾巴尖/发梢</span></div>
+    <div class="row"><label>边缘阈值</label>
+      <input type="range" id="alpha_thr" min="5" max="95" value="50" oninput="onCtl()">
+      <span class="val" id="thrv">0.50</span></div>
+    <div class="row"><label>alpha 模式</label>
+      <select id="alpha_mode" onchange="onCtl()">
+        <option value="hard">hard 硬边(像素画)</option>
+        <option value="keep">keep 保留柔边</option>
+      </select></div>
+    <div class="row"><label>轮廓形态</label>
+      <select id="edge" onchange="onCtl()">
+        <option value="none">none 不动</option>
+        <option value="shrink">shrink 收缩1px(去光晕)</option>
+        <option value="grow">grow 扩张1px</option>
+      </select></div>
+    <div class="row"><label>边缘配色</label>
+      <select id="edge_color" onchange="onCtl()">
+        <option value="stretch">stretch 内圈色外推(去暗边)</option>
+        <option value="avg">avg 内圈平均色</option>
+        <option value="keep">keep 不动</option>
+      </select></div>
+    <div class="row"><label>去孤立像素</label>
+      <input type="range" id="despike" min="0" max="3" value="1" oninput="onCtl()">
+      <span class="val" id="dpv">1</span></div>
+    <div class="row"><label>留白 px</label>
+      <input type="range" id="pad" min="0" max="12" value="0" oninput="onCtl()">
+      <span class="val" id="padv">0</span></div>
+    <div class="row"><label>裁透明边</label>
+      <input type="checkbox" id="no_trim" onchange="onCtl()" style="flex:0 0 auto">
+      <span class="note">勾选＝不裁，保留原始画布</span></div>
+
+    <div class="sep"></div>
+    <h2>批量处理文件夹</h2>
+    <div class="row"><label>输入文件夹</label><input type="text" id="bfolder" placeholder="D:\art\input"></div>
+    <div class="row"><label>输出文件夹</label><input type="text" id="bout" placeholder="留空=输入文件夹\pixel_out"></div>
+    <div class="btns"><button class="primary" onclick="batch()">开始批量</button></div>
+    <div id="batchres" class="note"></div>
+  </div>
+</div>
+
+<script>
+let SRC = null;          // {b64} 或 {path}
+let SRCNAME = "", SPRITE = null, TIMER = null;
+
+const $ = id => document.getElementById(id);
+const CONTROLS = ["size","pixel_size","colors","sample","core_thr","rescue","alpha_thr",
+                  "alpha_mode","edge","edge_color","despike","pad","no_trim"];
+
+function params(){
+  const ps = +$("pixel_size").value;
+  const thr = +$("alpha_thr").value / 100;
+  return {
+    size: ps ? 0 : +$("size").value,
+    pixel_size: ps,
+    colors: +$("colors").value,
+    sample: $("sample").value,
+    core_thr: +$("core_thr").value / 100,
+    cov_thr: thr,
+    rescue: $("rescue").checked ? "on" : "off",
+    palette_method: "median",
+    alpha_thr: thr,
+    alpha_mode: $("alpha_mode").value,
+    edge: $("edge").value,
+    edge_color: $("edge_color").value,
+    despike: +$("despike").value,
+    pad: +$("pad").value,
+    no_trim: $("no_trim").checked,
+  };
+}
+function refreshLabels(){
+  $("sizev").textContent = $("size").value;
+  const ps = +$("pixel_size").value;
+  $("psv").textContent = ps ? ps + "px" : "关";
+  $("size").disabled = !!ps;
+  $("colorsv").textContent = $("colors").value === "0" ? "不限" : $("colors").value;
+  $("thrv").textContent = (+$("alpha_thr").value / 100).toFixed(2);
+  $("corev").textContent = (+$("core_thr").value / 100).toFixed(2);
+  $("dpv").textContent = $("despike").value;
+  $("padv").textContent = $("pad").value;
+}
+function onCtl(){ refreshLabels(); clearTimeout(TIMER); TIMER = setTimeout(convert, 140); }
+
+function setParams(p){
+  for (const k of ["sample","alpha_mode","edge","edge_color"]) if (p[k]) $(k).value = p[k];
+  for (const k of ["colors","despike"]) if (p[k] !== undefined) $(k).value = p[k];
+  if (p.alpha_thr !== undefined) $("alpha_thr").value = Math.round(p.alpha_thr * 100);
+  if (p.cov_thr !== undefined) $("alpha_thr").value = Math.round(p.cov_thr * 100);
+  if (p.core_thr !== undefined) $("core_thr").value = Math.round(p.core_thr * 100);
+  if (p.rescue !== undefined) $("rescue").checked = (p.rescue !== "off");
+  refreshLabels(); convert();
+}
+
+// ---- 输入 ----
+$("drop").onclick = () => $("file").click();
+$("file").onchange = e => { const f = e.target.files[0]; if (f) readFile(f); };
+["dragenter","dragover"].forEach(ev => $("drop").addEventListener(ev, e => {
+  e.preventDefault(); $("drop").classList.add("hot"); }));
+["dragleave","drop"].forEach(ev => $("drop").addEventListener(ev, e => {
+  e.preventDefault(); $("drop").classList.remove("hot"); }));
+$("drop").addEventListener("drop", e => {
+  const f = e.dataTransfer.files[0]; if (f) readFile(f); });
+
+function readFile(f){
+  const r = new FileReader();
+  r.onload = () => {
+    SRC = {b64: r.result.split(",")[1]};
+    SRCNAME = f.name; $("srcname").textContent = SRCNAME;
+    $("orig").src = r.result; $("inpath").value = "";
+    $("orig").onload = fitOrig;
+    fitOrig(); convert();
+  };
+  r.readAsDataURL(f);
+}
+function loadPath(){
+  const p = $("inpath").value.trim();
+  if (!p) { alert("先填图片路径喵～"); return; }
+  SRC = {path: p}; SRCNAME = p.split(/[\\/]/).pop(); $("srcname").textContent = SRCNAME;
+  convert(true);
+}
+function fitOut(setSlider){
+  const box = $("outbox"), im = $("out");
+  if (!im.naturalWidth) return;
+  const bx = box.clientWidth - 24, by = box.clientHeight - 24;
+  const z = Math.max(1, Math.min(24, Math.floor(Math.min(bx / im.naturalWidth, by / im.naturalHeight))));
+  if (setSlider) $("zoom").value = z;
+  applyZoom();
+}
+function applyZoom(){
+  const z = +$("zoom").value, im = $("out");
+  $("zoomv").textContent = z + "x";
+  if (im.naturalWidth) { im.style.width = (im.naturalWidth * z) + "px"; }
+}
+function zoomChanged(){ applyZoom(); }
+function fitOrig(){
+  const z = +$("zoom").value;
+  const box = $("origbox"), im = $("orig");
+  if (!im.naturalWidth) return;
+  const s = Math.min((box.clientWidth - 24) / im.naturalWidth,
+                     (box.clientHeight - 24) / im.naturalHeight, 2);
+  im.style.width = (im.naturalWidth * s) + "px";
+}
+
+// ---- 网络: 统一走后端未连接提示 ----
+function showOffline(on){ document.getElementById("offline").style.display = on ? "block" : "none"; }
+async function api(path, body){
+  let r;
+  try{
+    r = await fetch(path, {method:"POST", headers:{"Content-Type":"application/json"},
+                           body: JSON.stringify(body)});
+  }catch(e){
+    showOffline(true);
+    throw new Error("后端服务未连接（UI 进程已退出）—— 请双击 启动UI.bat 重新拉起，再刷新本页");
+  }
+  showOffline(false);
+  return await r.json();
+}
+
+// ---- 转换 ----
+async function convert(fetchOriginal){
+  if (!SRC) return;
+  $("status").textContent = "转换中…"; $("status").className = "dim";
+  const body = {source: SRC, params: params(), want_original: !!fetchOriginal};
+  try{
+    const j = await api("/api/convert", body);
+    if (!j.ok) throw new Error(j.error);
+    SPRITE = j.sprite;
+    $("out").src = "data:image/png;base64," + j.sprite;
+    $("out").onload = () => fitOut(true);
+    if (j.original) { $("orig").src = "data:image/png;base64," + j.original;
+                      $("orig").onload = fitOrig; fitOrig(); }
+    renderMetrics(j.metrics, j.ms, j.total_ms, j.cached);
+    $("status").textContent = "已转换 " + j.name + (j.cached ? " · 预处理已缓存" : " · 新建预处理");
+    $("status").className = "ok";
+  }catch(e){
+    $("status").textContent = "出错: " + e.message; $("status").className = "err";
+  }
+}
+function renderMetrics(m, ms, total, cached){
+  $("metrics").innerHTML = `
+    <div><small>尺寸(px)</small><b>${m.w}×${m.h}</b></div>
+    <div><small>色数</small><b>${m.colors}</b></div>
+    <div><small>半透明像素</small><b>${m.semi}</b></div>
+    <div><small>alpha 取值数</small><b>${m.alpha_levels}</b></div>
+    <div><small>边缘像素</small><b>${m.boundary}</b></div>
+    <div><small>耗时</small><b>${ms} ms<small style="font-size:10px"> / 全程 ${total ?? ms} ms</small></b></div>`;
+}
+
+// ---- 输出 ----
+function download(){
+  if (!SPRITE) return;
+  const a = document.createElement("a");
+  const base = (SRCNAME || "sprite").replace(/\.[^.]+$/, "");
+  a.href = "data:image/png;base64," + SPRITE;
+  a.download = base + "_pixel_" + $("size").value + "px.png";
+  a.click();
+}
+async function saveTo(){
+  if (!SPRITE) return;
+  const base = (SRCNAME || "sprite").replace(/\.[^.]+$/, "");
+  const p = prompt("保存到（完整路径）:", "F:\\DESKTOP\\像素素材转换\\输出\\" + base + ".png");
+  if (!p) return;
+  const j = await api("/api/save", {b64: SPRITE, path: p});
+  $("status").textContent = j.ok ? ("已保存 " + j.path) : ("保存失败: " + j.error);
+  $("status").className = j.ok ? "ok" : "err";
+}
+
+// ---- 批量 ----
+async function batch(){
+  const folder = $("bfolder").value.trim();
+  if (!folder) { alert("填一下输入文件夹喵～"); return; }
+  $("batchres").textContent = "批量处理中…";
+  try{
+    const j = await api("/api/batch", {folder, outdir: $("bout").value.trim(), params: params()});
+    if (!j.ok) throw new Error(j.error);
+    let h = `<p>完成 ${j.rows.length} 张，用时 ${j.seconds}s<br>输出目录：${j.outdir}<br>压缩包：${j.zip}</p>`;
+    h += `<table><tr><th>文件</th><th>尺寸</th><th>色数</th><th>边缘色差</th></tr>`;
+    for (const x of j.rows) h += x.error
+      ? `<tr><td>${x.name}</td><td colspan=3 class="err">${x.error}</td></tr>`
+      : `<tr><td>${x.name}</td><td>${x.w}×${x.h}</td><td>${x.colors}</td><td>${x.edge_delta}</td></tr>`;
+    $("batchres").innerHTML = h + "</table>";
+  }catch(e){ $("batchres").innerHTML = '<span class="err">出错: ' + e.message + '</span>'; }
+}
+
+// ---- 启动 ----
+(async function init(){
+  let j;
+  try{
+    const r = await fetch("/api/presets");
+    j = await r.json();
+    showOffline(false);
+  }catch(e){                       // 后端没起来也要能显示界面 + 顶部黄条提示
+    showOffline(true);
+    j = {presets:{"推荐(v3核心像素+救援)":{sample:"core",core_thr:0.7,cov_thr:0.5,rescue:"on",
+          edge_color:"keep",colors:16,despike:1},
+        "老算法 多数投票(v2)":{sample:"majority",edge_color:"stretch",colors:16,despike:1}}};
+  }
+  const box = $("presets");
+  for (const [name, p] of Object.entries(j.presets)){
+    const b = document.createElement("span");
+    b.className = "chip"; b.textContent = name;
+    b.onclick = () => setParams(p);
+    box.appendChild(b);
+  }
+  refreshLabels();
+  const url = new URLSearchParams(location.search).get("in");
+  if (url) { $("inpath").value = url; loadPath(); }
+})();
+</script>
+</body>
+</html>

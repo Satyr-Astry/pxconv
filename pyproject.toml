@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pxconv"
+version = "3.0.0"
+description = "Alpha-aware downscaler that turns transparent PNGs into pixel-art sprites: exact area coverage, core-pixel sampling, thin-structure rescue, hard-edged alpha, capped palette."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Satyr-Astry" }]
+keywords = ["pixel-art", "sprite", "alpha", "downscale", "game-assets", "quantization"]
+dependencies = ["numpy>=1.23", "pillow>=9.0"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+  "Topic :: Games/Entertainment",
+]
+
+[project.scripts]
+pxconv = "pxconv:main"
+
+[project.urls]
+Homepage = "https://github.com/Satyr-Astry/pxconv"
+Source = "https://github.com/Satyr-Astry/pxconv"
+
+[tool.setuptools]
+py-modules = ["pxconv"]
