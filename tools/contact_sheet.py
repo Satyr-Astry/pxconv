@@ -41,7 +41,7 @@ def make(path: str, out: str, sizes: list[int], colors: int,
                                no_preview=True)
         small = P.convert(src, cols, rows, o)
         im = Image.fromarray((np.clip(small, 0, 1) * 255 + 0.5).astype(np.uint8), "RGBA")
-        k = max(1, TARGET_H // im.height)
+        k = max(1, round(TARGET_H / im.height))      # 取最近的整数倍, 各档显示高度更接近
         up = im.resize((im.width * k, im.height * k), Image.NEAREST)
         tiles.append((f"{s}px  {im.width}x{im.height}", up))
 

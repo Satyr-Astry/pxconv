@@ -37,6 +37,14 @@ Fixed setting: **output width 128 px / 24 colours**, CPU only.
 | cutout_00006 | 768×1344 | 496,509 (48.1%) | 13,947 / 7,301 | **0 / 24** | 8.2% → **31.3%** | 639 → **27 ms** |
 | cutout_00008 | 768×1344 | 530,984 (51.4%) | 14,806 / 4,407 | **0 / 24** | 9.4% → **33.7%** | 636 → **25 ms** |
 
+![Gallery: source → sprite](assets/gallery_results.png)
+
+*Gallery: top row = source, bottom row = pxconv v3 output (target width 128 px / 24 colours, uniformly upscaled 2× with NEAREST so the pixel grid is visible). All five outputs land at 0 semi-transparent pixels, 2 alpha levels and 24 colours.*
+
+![Same character at 48/64/96/128/160 px](assets/gallery_sizes.png)
+
+*One character (cutout_00005) at 48 / 64 / 96 / 128 / 160 px. Displayed with integer NEAREST upscaling, hence the slightly uneven heights; below 96 px fingers and facial features start to smear, 128 px is the balance point, 160 px if you want detail.*
+
 ![Real comparison](assets/algorithm_compare_real.png)
 
 *cutout_00005 (the image with the largest v3 gain), five panels: v2 area mean | v2 majority | **v3 core, the default** | v3 core + edge-colour stretch | v3 with rescue off. Checkerboard = transparency.*
